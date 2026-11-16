@@ -1317,9 +1317,9 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
     }
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=$presentMode TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
     val graphicsDriverConfig = if (gpu.isAdreno6xx) {
-        "vulkanVersion=1.3,version=${gpu.driver},adrenotoolsTurnip=1,maxDeviceMemory=2048,presentMode=fifo,resourceType=auto,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
+        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=2048,presentMode=fifo,resourceType=buffer,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
     } else {
-        "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high"
+        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,resourceType=buffer,bcnEmulation=auto,quality=high"
     }
     val dxwrapperConfig = if (gpu.isAdreno6xx) {
         "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=2048,async=1,asyncCache=1,constantBufferRangeCheck=1"
@@ -1486,9 +1486,12 @@ private fun installAdreno650Driver(context: Context, gameRoot: File, onStatus: (
     val externalOverride = externalCandidates.firstOrNull { it.isFile && it.length() > 0L }
 
     // If an external local driver is placed in the WoW folder or Downloads, always apply it;
-    // otherwise skip if a valid Adreno 650 driver is already installed.
+    // otherwise skip if a valid Adreno 650 driver with the expected driverVersion is already installed.
+    val installedVersion = runCatching {
+        JSONObject(File(driverDir, "meta.json").readText()).optString("driverVersion")
+    }.getOrDefault("")
     val hasInstalledSo = driverDir.listFiles { f -> f.isFile && f.name.endsWith(".so") }?.isNotEmpty() == true
-    if (externalOverride == null && File(driverDir, "meta.json").exists() && hasInstalledSo) {
+    if (externalOverride == null && installedVersion == "26.1.99-fe067b17d9-sd865-wow" && hasInstalledSo) {
         return
     }
 

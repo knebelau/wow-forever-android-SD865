@@ -23,19 +23,22 @@ for f in "${FILES[@]}"; do
         if [ "$f" = "turnip-V32-RP6sched.zip" ]; then
             curl -fL --retry 3 -o "$DEST/$f.part" "https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip"
         elif [ "$f" = "turnip-sd865.zip" ]; then
-            curl -fL --retry 3 -o "$DEST/$f.part" "https://github.com/K11MCH1/AdrenoToolsDrivers/releases/download/v25.3.0-rc.06/Turnip_v25.3.0_R6_Gmem.zip"
+            cp "$DEST/turnip-wow-scheduler-test.zip" "$DEST/$f.part"
             python3 - "$DEST/$f.part" <<'PY'
 import json, os, sys, zipfile
 zip_path = sys.argv[1]
-with zipfile.ZipFile(zip_path, "r") as zin:
-    so_name = next(n for n in zin.namelist() if n.endswith(".so"))
-    so_data = zin.read(so_name)
-    meta = json.loads(zin.read("meta.json").decode("utf-8"))
-meta["name"] = "Turnip-SD865-Z"
-meta["libraryName"] = "libvulkan_freedreno.so"
-with zipfile.ZipFile(zip_path + ".repacked", "w", zipfile.ZIP_DEFLATED) as zout:
-    zout.writestr("meta.json", json.dumps(meta, indent=2) + "\n")
-    zout.writestr("libvulkan_freedreno.so", so_data)
+with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(zip_path + ".repacked", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "meta.json":
+            meta = json.loads(data.decode("utf-8"))
+            meta["name"] = "Turnip-SD865-Z"
+            meta["description"] = "Mesa Turnip fe067b17d9 with IR3 barycentric scheduler fix, ICD exports, and Adreno 650 (FD650) GMEM support."
+            meta["driverVersion"] = "26.1.99-fe067b17d9-sd865-wow"
+            meta["libraryName"] = "libvulkan_freedreno.so"
+            zout.writestr("meta.json", json.dumps(meta, indent=2) + "\n")
+        else:
+            zout.writestr(item, data)
 os.replace(zip_path + ".repacked", zip_path)
 PY
         else
