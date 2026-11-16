@@ -66,7 +66,6 @@ import com.winlator.container.ContainerManager
 import com.winlator.contents.ContentProfile
 import com.winlator.contents.ContentsManager
 import com.winlator.core.FileUtils
-import com.winlator.core.GPUInformation
 import com.winlator.core.TarCompressorUtils
 import com.winlator.fexcore.FEXCorePreset
 import com.winlator.xenvironment.ImageFs
@@ -1177,8 +1176,6 @@ private class StorageAccessDeniedException(cause: Throwable) : Exception(cause)
 private fun Throwable.isPermissionDenied() =
     message?.let { "EPERM" in it || "Operation not permitted" in it } == true
 
-private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
-private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val ADRENO_650_DRIVER = "Turnip-SD865-Z"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
@@ -1189,53 +1186,17 @@ private data class GpuProfile(
     val screenSize: String,
     val label: String,
     val edition: String,
-    val isAdreno6xx: Boolean = false,
+    val isAdreno6xx: Boolean = true,
 ) {
     companion object {
-        fun detect(context: Context) = when {
-            isAdreno8xxDevice(context) -> GpuProfile(
-                driver = ADRENO_8XX_DRIVER,
-                tuDebug = "noconform,sysmem",
-                screenSize = "1280x720",
-                label = "Adreno 8xx",
-                edition = "Snapdragon 8 Elite / Adreno 8xx",
-            )
-            isAdreno6xxDevice(context) -> GpuProfile(
-                driver = ADRENO_650_DRIVER,
-                tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,unaligned_store",
-                screenSize = "1280x720",
-                label = "Adreno 650",
-                edition = "Snapdragon 865 / Adreno 650",
-                isAdreno6xx = true,
-            )
-            else -> GpuProfile(
-                driver = DEFAULT_DRIVER,
-                tuDebug = "noconform",
-                screenSize = "1920x1080",
-                label = "Adreno 740",
-                edition = "Snapdragon 8 Series / Adreno 740",
-            )
-        }
-
-        private fun isAdreno8xxDevice(context: Context): Boolean {
-            if (GPUInformation.isAdreno8Elite(context)) return true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val soc = Build.SOC_MODEL
-                if (listOf("SM8735", "SM8750", "SM8845", "SM8850").any { soc.contains(it, ignoreCase = true) }) return true
-            }
-            return Build.HARDWARE.contains("sun", ignoreCase = true)
-        }
-
-        private fun isAdreno6xxDevice(context: Context): Boolean {
-            if (GPUInformation.isAdreno650(context) || GPUInformation.isAdreno6xx(context)) return true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val soc = Build.SOC_MODEL
-                if (listOf("SM8250", "KONA").any { soc.contains(it, ignoreCase = true) }) return true
-            }
-            return listOf("kona", "msmnile", "lito", "lahaina").any {
-                Build.BOARD.contains(it, ignoreCase = true) || Build.HARDWARE.contains(it, ignoreCase = true)
-            }
-        }
+        fun detect(@Suppress("UNUSED_PARAMETER") context: Context) = GpuProfile(
+            driver = ADRENO_650_DRIVER,
+            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,unaligned_store",
+            screenSize = "1280x720",
+            label = "Adreno 650",
+            edition = "Snapdragon 865 / Adreno 650",
+            isAdreno6xx = true,
+        )
     }
 }
 
@@ -1451,8 +1412,6 @@ private fun portalOf(root: File) =
         ?: WowClientDownloader.defaultBranch().uppercase()
 
 private fun installBundledComponents(context: Context, gameRoot: File, onStatus: (String) -> Unit) {
-    installDriver(context, DEFAULT_DRIVER, "turnip-wow-scheduler-test.zip", onStatus)
-    installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
     installAdreno650Driver(context, gameRoot, onStatus)
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
@@ -1473,16 +1432,6 @@ private fun installBundledComponents(context: Context, gameRoot: File, onStatus:
 
     ImageFsInstaller.ensureBionicLib(context, ImageFs.find(context).rootDir)
     ContentsManager(context).syncContents()
-}
-
-private fun installDriver(context: Context, driverName: String, assetZip: String, onStatus: (String) -> Unit) {
-    val driverDir = File(context.filesDir, "contents/adrenotools/$driverName")
-    if (File(driverDir, "meta.json").exists()) return
-    onStatus("Installing $driverName driver...")
-    driverDir.mkdirs()
-    if (!FileUtils.extractZipFromAssets(context, "bundled_components/$assetZip", driverDir)) {
-        Timber.e("Error extracting driver $driverName from $assetZip")
-    }
 }
 
 private fun installAdreno650Driver(context: Context, gameRoot: File, onStatus: (String) -> Unit) {

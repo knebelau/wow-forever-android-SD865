@@ -8,7 +8,6 @@ FILES=(
     proton-11.0-90624-arm64ec.wcp
     dxvk-2.4.1-wow-aarch64-test.wcp
     turnip-wow-scheduler-test.zip
-    turnip-V32-RP6sched.zip
     turnip-sd865.zip
 )
 
@@ -20,9 +19,7 @@ for f in "${FILES[@]}"; do
         cp "$1/$f" "$DEST/$f"
         echo "copied $f"
     else
-        if [ "$f" = "turnip-V32-RP6sched.zip" ]; then
-            curl -fL --retry 3 -o "$DEST/$f.part" "https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip"
-        elif [ "$f" = "turnip-sd865.zip" ]; then
+        if [ "$f" = "turnip-sd865.zip" ]; then
             cp "$DEST/turnip-wow-scheduler-test.zip" "$DEST/$f.part"
             python3 - "$DEST/$f.part" <<'PY'
 import json, os, sys, zipfile
@@ -33,7 +30,7 @@ with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(zip_path + ".repacke
         if item.filename == "meta.json":
             meta = json.loads(data.decode("utf-8"))
             meta["name"] = "Turnip-SD865-Z"
-            meta["description"] = "Mesa Turnip fe067b17d9 with IR3 barycentric scheduler fix, ICD exports, and Adreno 650 (FD650) GMEM support."
+            meta["description"] = "Mesa Turnip fe067b17d9 with IR3 barycentric scheduler fix, ICD exports, and Adreno 650 (FD650) support."
             meta["driverVersion"] = "26.1.99-fe067b17d9-sd865-wow"
             meta["libraryName"] = "libvulkan_freedreno.so"
             zout.writestr("meta.json", json.dumps(meta, indent=2) + "\n")
