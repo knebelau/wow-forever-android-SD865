@@ -1191,7 +1191,7 @@ private data class GpuProfile(
     companion object {
         fun detect(@Suppress("UNUSED_PARAMETER") context: Context) = GpuProfile(
             driver = ADRENO_650_DRIVER,
-            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,noubwc,flushall,unaligned_store",
+            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,noubwc,unaligned_store",
             screenSize = "1280x720",
             label = "Adreno 650",
             edition = "Snapdragon 865 / Adreno 650",
@@ -1375,8 +1375,18 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
     }
 
     val forced = mapOf(
+        "agentUID" to CONFIG_DEFAULTS.getValue("agentUID"),
         "gxApi" to CONFIG_DEFAULTS.getValue("gxApi"),
         "portal" to "\"${region?.name ?: portalOf(root)}\"",
+        "hwDetect" to "\"0\"",
+        "videoOptionsVersion" to "\"54\"",
+        "engineSurvey" to "\"8\"",
+        "engineSurveyPatch" to "\"16001\"",
+        "hasSelectedExperiencePreset" to "\"1\"",
+        "showPhotosensitivityWarning" to "\"0\"",
+        "showScreenNarrationDialog" to "\"0\"",
+        "accessibilityScreenNarrationEnabled" to "\"0\"",
+        "vsync" to "\"0\"",
         "graphicsQuality" to "\"0\"",
         "RAIDgraphicsQuality" to "\"0\"",
         "RenderScale" to "\"0.65\"",
@@ -1390,6 +1400,8 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         "raidGraphicsGroundClutter" to "\"0\"",
         "graphicsLiquidDetail" to "\"0\"",
         "raidGraphicsLiquidDetail" to "\"0\"",
+        "graphicsPBRLiquidDetail" to "\"0\"",
+        "raidGraphicsPBRLiquidDetail" to "\"0\"",
         "graphicsComputeEffects" to "\"0\"",
         "raidGraphicsComputeEffects" to "\"0\"",
         "graphicsProjectedTextures" to "\"0\"",
@@ -1406,10 +1418,26 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         "horizonClip" to CONFIG_DEFAULTS.getValue("horizonClip"),
         "RAIDfarclip" to CONFIG_DEFAULTS.getValue("RAIDfarclip"),
         "RAIDhorizonClip" to CONFIG_DEFAULTS.getValue("RAIDhorizonClip"),
+        "terrainLodDist" to "\"200\"",
+        "RAIDterrainLodDist" to "\"200\"",
+        "wmoLodDist" to "\"200\"",
+        "RAIDwmoLodDist" to "\"200\"",
+        "doodadLodScale" to "\"50\"",
+        "RAIDdoodadLodScale" to "\"50\"",
+        "lodObjectCullSize" to "\"35\"",
+        "RAIDlodObjectCullSize" to "\"35\"",
+        "lodObjectFadeScale" to "\"50\"",
+        "RAIDlodObjectFadeScale" to "\"50\"",
         "shadowMode" to CONFIG_DEFAULTS.getValue("shadowMode"),
         "RAIDshadowMode" to "\"0\"",
         "graphicsShadowQuality" to CONFIG_DEFAULTS.getValue("graphicsShadowQuality"),
         "raidGraphicsShadowQuality" to CONFIG_DEFAULTS.getValue("raidGraphicsShadowQuality"),
+        "shadowNumCascades" to "\"1\"",
+        "RAIDshadowNumCascades" to "\"1\"",
+        "shadowBlendCascades" to "\"0\"",
+        "RAIDshadowBlendCascades" to "\"0\"",
+        "spellClutter" to "\"0\"",
+        "RAIDspellClutter" to "\"0\"",
         "gxMTDisable" to "\"1\"",
         "gxMTPrepass" to "\"0\"",
         "gxMTShadow" to "\"0\"",
@@ -1433,7 +1461,8 @@ private const val CONFIG_WTF = "$FLAVOR_DIR/WTF/Config.wtf"
 private fun portalOf(root: File) =
     runCatching { File(root, CONFIG_WTF).takeIf { it.isFile }?.readLines() }.getOrNull()
         ?.firstOrNull { it.startsWith("SET portal ", ignoreCase = true) }
-        ?.substringAfter(" ")?.substringAfter(" ")?.trim('"')?.takeIf { it.isNotBlank() }
+        ?.substringAfter(" ")?.substringAfter(" ")?.trim('"')
+        ?.takeIf { p -> GameRegion.entries.any { it.name.equals(p, ignoreCase = true) } }?.uppercase()
         ?: WowClientDownloader.readBuildInfo(File(root, BUILD_INFO))?.get("Branch")?.takeIf { it.isNotBlank() }?.uppercase()
         ?: WowClientDownloader.defaultBranch().uppercase()
 
