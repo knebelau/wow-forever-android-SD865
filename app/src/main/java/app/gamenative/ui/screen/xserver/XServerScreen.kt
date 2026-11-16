@@ -4714,7 +4714,7 @@ private suspend fun extractGraphicsDriverFiles(
         envVars.put("LIBGL_KOPPER_DISABLE", "true")
 
         if (currentWrapperVersion.lowercase(Locale.getDefault()).contains("turnip")
-            && GPUInformation.isAdreno710_720_732(context)) {
+            && (GPUInformation.isAdreno710_720_732(context) || GPUInformation.isAdreno6xx(context))) {
             var tuDebug = envVars.get("TU_DEBUG").replace("sysmem", "gmem")
             if (!tuDebug.contains("gmem")) tuDebug = (if (tuDebug.isEmpty()) "" else "$tuDebug,") + "gmem"
             envVars.put("TU_DEBUG", tuDebug)

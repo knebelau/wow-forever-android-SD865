@@ -91,15 +91,32 @@ jobs:
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::RELEASE_KEYSTORE_BASE64 is not set"; exit 1; fi
           mkdir -p app/keystores
-          echo "$KEYSTORE_BASE64" | base64 -d > app/keystores/release.jks
-          {
-            echo "storeFile=keystores/release.jks"
-            echo "storePassword=$STORE_PASSWORD"
-            echo "keyAlias=$KEY_ALIAS"
-            echo "keyPassword=$KEY_PASSWORD"
-          } > app/keystores/keystore.properties
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > app/keystores/release.jks
+            {
+              echo "storeFile=keystores/release.jks"
+              echo "storePassword=$STORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > app/keystores/keystore.properties
+          else
+            echo "Generating release keystore for repository build..."
+            keytool -genkeypair -v \
+              -keystore app/keystores/release.jks \
+              -storetype PKCS12 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias wowforever \
+              -storepass wowforever123 \
+              -keypass wowforever123 \
+              -dname "CN=WoW Forever SD865, OU=Android, O=WoWForever, L=DE, S=DE, C=DE"
+            {
+              echo "storeFile=keystores/release.jks"
+              echo "storePassword=wowforever123"
+              echo "keyAlias=wowforever"
+              echo "keyPassword=wowforever123"
+            } > app/keystores/keystore.properties
+          fi
 
       - name: Build
         run: ./gradlew --no-daemon :app:assembleModernRelease

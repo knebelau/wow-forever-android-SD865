@@ -60,6 +60,7 @@ import app.gamenative.ui.util.SnackbarManager
 import app.gamenative.utils.AppUpdater
 import app.gamenative.utils.StorageUtils
 import app.gamenative.utils.renderReleaseNotes
+import com.winlator.box86_64.Box86_64Preset
 import com.winlator.container.Container
 import com.winlator.container.ContainerManager
 import com.winlator.contents.ContentProfile
@@ -67,6 +68,7 @@ import com.winlator.contents.ContentsManager
 import com.winlator.core.FileUtils
 import com.winlator.core.GPUInformation
 import com.winlator.core.TarCompressorUtils
+import com.winlator.fexcore.FEXCorePreset
 import com.winlator.xenvironment.ImageFs
 import com.winlator.xenvironment.ImageFsInstaller
 import kotlin.math.roundToInt
@@ -1177,15 +1179,42 @@ private fun Throwable.isPermissionDenied() =
 
 private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
 private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
+private const val ADRENO_650_DRIVER = "Turnip-SD865-Z"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
+private data class GpuProfile(
+    val driver: String,
+    val tuDebug: String,
+    val screenSize: String,
+    val label: String,
+    val edition: String,
+    val isAdreno6xx: Boolean = false,
+) {
     companion object {
-        fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
-            GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
-        } else {
-            GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
+        fun detect(context: Context) = when {
+            isAdreno8xxDevice(context) -> GpuProfile(
+                driver = ADRENO_8XX_DRIVER,
+                tuDebug = "noconform,sysmem",
+                screenSize = "1280x720",
+                label = "Adreno 8xx",
+                edition = "Snapdragon 8 Elite / Adreno 8xx",
+            )
+            isAdreno6xxDevice(context) -> GpuProfile(
+                driver = ADRENO_650_DRIVER,
+                tuDebug = "noconform,gmem,nolrz",
+                screenSize = "1280x720",
+                label = "Adreno 650",
+                edition = "Snapdragon 865 / Adreno 650",
+                isAdreno6xx = true,
+            )
+            else -> GpuProfile(
+                driver = DEFAULT_DRIVER,
+                tuDebug = "noconform",
+                screenSize = "1920x1080",
+                label = "Adreno 740",
+                edition = "Snapdragon 8 Series / Adreno 740",
+            )
         }
 
         private fun isAdreno8xxDevice(context: Context): Boolean {
@@ -1195,6 +1224,17 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
                 if (listOf("SM8735", "SM8750", "SM8845", "SM8850").any { soc.contains(it, ignoreCase = true) }) return true
             }
             return Build.HARDWARE.contains("sun", ignoreCase = true)
+        }
+
+        private fun isAdreno6xxDevice(context: Context): Boolean {
+            if (GPUInformation.isAdreno650(context) || GPUInformation.isAdreno6xx(context)) return true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val soc = Build.SOC_MODEL
+                if (listOf("SM8250", "KONA").any { soc.contains(it, ignoreCase = true) }) return true
+            }
+            return listOf("kona", "msmnile", "lito", "lahaina").any {
+                Build.BOARD.contains(it, ignoreCase = true) || Build.HARDWARE.contains(it, ignoreCase = true)
+            }
         }
     }
 }
@@ -1223,7 +1263,7 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
 }
 
 private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
-    installBundledComponents(context, onStatus)
+    installBundledComponents(context, gameRoot, onStatus)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     try {
@@ -1265,7 +1305,27 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val shaderCacheSize = if (gpu.isAdreno6xx) "128MB" else "512MB"
+    val presentMode = if (gpu.isAdreno6xx) "fifo" else "mailbox"
+    val adreno6xxEnv = if (gpu.isAdreno6xx) {
+        " TU_OVERRIDE_HEAP_SIZE=2048 DXVK_ASYNC=1 DXVK_GPLASYNCCACHE=1 DXVK_STATE_CACHE=1" +
+            " BOX64_DYNAREC_SAFEFLAGS=2 BOX64_DYNAREC_STRONGMEM=1 BOX64_DYNAREC_BIGBLOCK=1" +
+            " BOX64_DYNAREC_CALLRET=0 BOX64_DYNAREC_FASTNAN=0 BOX64_DYNAREC_FASTROUND=0" +
+            " BOX64_DYNAREC_X87DOUBLE=1 BOX64_DYNAREC_WAIT=1 BOX64_MMAP32=0 BOX64_AVX=0"
+    } else {
+        ""
+    }
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=$presentMode TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
+    val graphicsDriverConfig = if (gpu.isAdreno6xx) {
+        "vulkanVersion=1.3,version=${gpu.driver},adrenotoolsTurnip=1,maxDeviceMemory=2048,presentMode=fifo,resourceType=auto,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
+    } else {
+        "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high"
+    }
+    val dxwrapperConfig = if (gpu.isAdreno6xx) {
+        "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=2048,async=1,asyncCache=1,constantBufferRangeCheck=1"
+    } else {
+        "version=$DXVK_VERSION-1"
+    }
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
@@ -1273,12 +1333,14 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
         put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverConfig", graphicsDriverConfig)
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
-        put("dxwrapperConfig", "version=$DXVK_VERSION-1")
+        put("dxwrapperConfig", dxwrapperConfig)
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
+        put("box64Preset", if (gpu.isAdreno6xx) Box86_64Preset.COMPATIBILITY else Box86_64Preset.PERFORMANCE)
+        put("fexcorePreset", if (gpu.isAdreno6xx) FEXCorePreset.COMPATIBILITY else FEXCorePreset.INTERMEDIATE)
         put("fexcoreVersion", "2609-0")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/app.wowforever/storageG:${gameRoot.path}")
         put("executablePath", "G:\\$FLAVOR_DIR\\$EXE_NAME")
@@ -1375,9 +1437,10 @@ private fun portalOf(root: File) =
         ?: WowClientDownloader.readBuildInfo(File(root, BUILD_INFO))?.get("Branch")?.takeIf { it.isNotBlank() }?.uppercase()
         ?: WowClientDownloader.defaultBranch().uppercase()
 
-private fun installBundledComponents(context: Context, onStatus: (String) -> Unit) {
+private fun installBundledComponents(context: Context, gameRoot: File, onStatus: (String) -> Unit) {
     installDriver(context, DEFAULT_DRIVER, "turnip-wow-scheduler-test.zip", onStatus)
     installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
+    installAdreno650Driver(context, gameRoot, onStatus)
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
     if (!File(protonDir, "profile.json").exists() || !File(protonDir, "bin/wine").exists()) {
@@ -1407,6 +1470,91 @@ private fun installDriver(context: Context, driverName: String, assetZip: String
     if (!FileUtils.extractZipFromAssets(context, "bundled_components/$assetZip", driverDir)) {
         Timber.e("Error extracting driver $driverName from $assetZip")
     }
+}
+
+private fun installAdreno650Driver(context: Context, gameRoot: File, onStatus: (String) -> Unit) {
+    val driverDir = File(context.filesDir, "contents/adrenotools/$ADRENO_650_DRIVER")
+    val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    val externalCandidates = listOf(
+        File(gameRoot, "libvulkan_freedreno.so"),
+        File(gameRoot, "turnip-sd865.zip"),
+        File(gameRoot, "turnip-sd865.adpkg"),
+        File(downloadDir, "libvulkan_freedreno.so"),
+        File(downloadDir, "turnip-sd865.zip"),
+        File(downloadDir, "turnip-sd865.adpkg"),
+    )
+    val externalOverride = externalCandidates.firstOrNull { it.isFile && it.length() > 0L }
+
+    // If an external local driver is placed in the WoW folder or Downloads, always apply it;
+    // otherwise skip if a valid Adreno 650 driver is already installed.
+    val hasInstalledSo = driverDir.listFiles { f -> f.isFile && f.name.endsWith(".so") }?.isNotEmpty() == true
+    if (externalOverride == null && File(driverDir, "meta.json").exists() && hasInstalledSo) {
+        return
+    }
+
+    onStatus("Installing $ADRENO_650_DRIVER driver...")
+    if (driverDir.exists()) FileUtils.delete(driverDir)
+    driverDir.mkdirs()
+
+    var installed = false
+    if (externalOverride != null) {
+        Timber.i("Installing local Adreno 650 Turnip override from ${externalOverride.absolutePath}")
+        installed = if (externalOverride.name.endsWith(".so", ignoreCase = true)) {
+            FileUtils.copy(externalOverride, File(driverDir, "libvulkan_freedreno.so"))
+        } else {
+            FileUtils.extractZipFromFile(externalOverride, driverDir)
+        }
+    }
+
+    if (!installed) {
+        installed = FileUtils.extractZipFromAssets(context, "bundled_components/turnip-sd865.zip", driverDir) ||
+            extractRawAssetDriver(context, "bundled_components/libvulkan_freedreno.so", driverDir) ||
+            FileUtils.extractZipFromAssets(context, "bundled_components/turnip-wow-scheduler-test.zip", driverDir)
+    }
+
+    if (installed) {
+        normalizeAdrenotoolsDriverDir(driverDir, ADRENO_650_DRIVER)
+    } else {
+        Timber.e("Error installing Adreno 650 driver $ADRENO_650_DRIVER")
+    }
+}
+
+private fun extractRawAssetDriver(context: Context, assetPath: String, driverDir: File): Boolean {
+    return try {
+        val outFile = File(driverDir, "libvulkan_freedreno.so")
+        context.assets.open(assetPath).use { input ->
+            outFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        FileUtils.chmod(outFile, 493) // 0755
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun normalizeAdrenotoolsDriverDir(driverDir: File, driverName: String) {
+    val soFiles = driverDir.listFiles { file -> file.isFile && file.name.endsWith(".so") }.orEmpty()
+    val mainSo = soFiles.firstOrNull { it.name == "libvulkan_freedreno.so" }
+        ?: soFiles.firstOrNull { it.name.startsWith("vulkan.") }
+        ?: soFiles.firstOrNull()
+    val libraryName = mainSo?.name ?: "libvulkan_freedreno.so"
+    soFiles.forEach { FileUtils.chmod(it, 505) } // 0771
+
+    val metaFile = File(driverDir, "meta.json")
+    val metaJson = runCatching {
+        if (metaFile.isFile) JSONObject(metaFile.readText()) else JSONObject()
+    }.getOrDefault(JSONObject())
+
+    metaJson.put("schemaVersion", metaJson.optInt("schemaVersion", 1))
+    metaJson.put("name", driverName)
+    metaJson.put("description", metaJson.optString("description", "Turnip Adreno 650 (SD865) Vulkan Driver"))
+    metaJson.put("author", metaJson.optString("author", "Mesa Turnip / Custom SD865"))
+    metaJson.put("packageVersion", metaJson.optString("packageVersion", "1"))
+    metaJson.put("vendor", metaJson.optString("vendor", "Mesa"))
+    metaJson.put("driverVersion", metaJson.optString("driverVersion", "Turnip-SD865-Z"))
+    metaJson.put("minApi", metaJson.optInt("minApi", 29))
+    metaJson.put("libraryName", metaJson.optString("libraryName", libraryName).ifBlank { libraryName })
+    metaFile.writeText(metaJson.toString(2))
 }
 
 private fun extractBundledWcp(context: Context, assetName: String, destination: File): Boolean {

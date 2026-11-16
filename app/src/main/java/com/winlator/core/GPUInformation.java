@@ -155,7 +155,13 @@ public abstract class GPUInformation {
     }
 
     public static boolean isAdreno6xx(Context context) {
-        return getRenderer(context).toLowerCase(Locale.ENGLISH).matches(".*adreno[^6]+6[0-9]{2}.*");
+        String r = getRenderer(context).toLowerCase(Locale.ENGLISH);
+        return r.contains("adreno") && r.matches(".*\\b6[0-9]{2}\\b.*");
+    }
+
+    public static boolean isAdreno650(Context context) {
+        String r = getRenderer(context).toLowerCase(Locale.ENGLISH);
+        return r.contains("adreno") && r.matches(".*\\b650\\b.*");
     }
 
     public static boolean isAdreno8Elite(Context context) {
