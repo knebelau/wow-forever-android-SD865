@@ -83,3 +83,5 @@ Wow-ARM64/
 
 # Agent guidance (private)
 docs/
+gradle/wrapper/gradle-wrapper.properties
+.gitignore
