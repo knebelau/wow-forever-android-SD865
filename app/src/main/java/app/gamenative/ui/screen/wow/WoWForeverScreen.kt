@@ -1202,7 +1202,7 @@ private data class GpuProfile(
             )
             isAdreno6xxDevice(context) -> GpuProfile(
                 driver = ADRENO_650_DRIVER,
-                tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb",
+                tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,noubwc,flushall,syncdraw,nobin,unaligned_store",
                 screenSize = "1280x720",
                 label = "Adreno 650",
                 edition = "Snapdragon 865 / Adreno 650",
@@ -1316,12 +1316,12 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
     }
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
     val graphicsDriverConfig = if (gpu.isAdreno6xx) {
-        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=4096,presentMode=mailbox,resourceType=buffer,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
+        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=4096,presentMode=mailbox,resourceType=auto,bcnEmulation=none,bcnEmulationCache=0,quality=low"
     } else {
         "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,resourceType=buffer,bcnEmulation=auto,quality=high"
     }
     val dxwrapperConfig = if (gpu.isAdreno6xx) {
-        "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=0,async=1,asyncCache=1"
+        "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=0,async=1,asyncCache=1,constantBufferRangeCheck=1"
     } else {
         "version=$DXVK_VERSION-1"
     }
@@ -1413,8 +1413,23 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         configWtf.writeText(CONFIG_DEFAULTS.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n")
     }
 
-    val forced = mapOf("gxApi" to CONFIG_DEFAULTS.getValue("gxApi"), "portal" to "\"${region?.name ?: portalOf(root)}\"") +
-        RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
+    val forced = mapOf(
+        "gxApi" to CONFIG_DEFAULTS.getValue("gxApi"),
+        "portal" to "\"${region?.name ?: portalOf(root)}\"",
+        "farclip" to CONFIG_DEFAULTS.getValue("farclip"),
+        "horizonClip" to CONFIG_DEFAULTS.getValue("horizonClip"),
+        "RAIDfarclip" to CONFIG_DEFAULTS.getValue("RAIDfarclip"),
+        "RAIDhorizonClip" to CONFIG_DEFAULTS.getValue("RAIDhorizonClip"),
+        "shadowMode" to CONFIG_DEFAULTS.getValue("shadowMode"),
+        "RAIDshadowMode" to "\"0\"",
+        "graphicsShadowQuality" to CONFIG_DEFAULTS.getValue("graphicsShadowQuality"),
+        "raidGraphicsShadowQuality" to CONFIG_DEFAULTS.getValue("raidGraphicsShadowQuality"),
+        "gxMTDisable" to "\"1\"",
+        "gxMTPrepass" to "\"0\"",
+        "gxMTShadow" to "\"0\"",
+        "gxMTOpaque" to "\"0\"",
+        "gxMTTerrain" to "\"0\"",
+    ) + RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
     val forcedLines = forced.map { (key, value) -> "SET $key $value" }
     val original = configWtf.readLines()
     if (!original.containsAll(forcedLines)) {
