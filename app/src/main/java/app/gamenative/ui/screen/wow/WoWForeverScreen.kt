@@ -1191,7 +1191,7 @@ private data class GpuProfile(
     companion object {
         fun detect(@Suppress("UNUSED_PARAMETER") context: Context) = GpuProfile(
             driver = ADRENO_650_DRIVER,
-            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,noubwc,unaligned_store",
+            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,noubwc,flushall,unaligned_store",
             screenSize = "1280x720",
             label = "Adreno 650",
             edition = "Snapdragon 865 / Adreno 650",
