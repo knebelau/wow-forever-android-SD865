@@ -1191,7 +1191,7 @@ private data class GpuProfile(
     companion object {
         fun detect(@Suppress("UNUSED_PARAMETER") context: Context) = GpuProfile(
             driver = ADRENO_650_DRIVER,
-            tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb,unaligned_store",
+            tuDebug = "noconform,gmem,nolrz,nolrzfc,noubwc,flushall,unaligned_store",
             screenSize = "1280x720",
             label = "Adreno 650",
             edition = "Snapdragon 865 / Adreno 650",
@@ -1385,10 +1385,11 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         "RAIDshadowMode" to "\"0\"",
         "graphicsShadowQuality" to CONFIG_DEFAULTS.getValue("graphicsShadowQuality"),
         "raidGraphicsShadowQuality" to CONFIG_DEFAULTS.getValue("raidGraphicsShadowQuality"),
-        "gxMTDisable" to "\"0\"",
-        "gxMTPrepass" to "\"1\"",
-        "gxMTOpaque" to "\"1\"",
-        "gxMTTerrain" to "\"1\"",
+        "gxMTDisable" to "\"1\"",
+        "gxMTPrepass" to "\"0\"",
+        "gxMTShadow" to "\"0\"",
+        "gxMTOpaque" to "\"0\"",
+        "gxMTTerrain" to "\"0\"",
     ) + RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
     val forcedLines = forced.map { (key, value) -> "SET $key $value" }
     val original = configWtf.readLines()
