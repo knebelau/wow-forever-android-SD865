@@ -1202,7 +1202,7 @@ private data class GpuProfile(
             )
             isAdreno6xxDevice(context) -> GpuProfile(
                 driver = ADRENO_650_DRIVER,
-                tuDebug = "noconform,gmem,nolrz",
+                tuDebug = "noconform,sysmem,nolrz,nolrzfc,nocb",
                 screenSize = "1280x720",
                 label = "Adreno 650",
                 edition = "Snapdragon 865 / Adreno 650",
@@ -1306,23 +1306,22 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     val shaderCacheSize = if (gpu.isAdreno6xx) "128MB" else "512MB"
-    val presentMode = if (gpu.isAdreno6xx) "fifo" else "mailbox"
     val adreno6xxEnv = if (gpu.isAdreno6xx) {
-        " TU_OVERRIDE_HEAP_SIZE=2048 DXVK_ASYNC=1 DXVK_GPLASYNCCACHE=1 DXVK_STATE_CACHE=1" +
+        " DXVK_ASYNC=1 DXVK_GPLASYNCCACHE=1 DXVK_STATE_CACHE=1" +
             " BOX64_DYNAREC_SAFEFLAGS=2 BOX64_DYNAREC_STRONGMEM=1 BOX64_DYNAREC_BIGBLOCK=1" +
             " BOX64_DYNAREC_CALLRET=0 BOX64_DYNAREC_FASTNAN=0 BOX64_DYNAREC_FASTROUND=0" +
             " BOX64_DYNAREC_X87DOUBLE=1 BOX64_DYNAREC_WAIT=1 BOX64_MMAP32=0 BOX64_AVX=0"
     } else {
         ""
     }
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=$presentMode TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
     val graphicsDriverConfig = if (gpu.isAdreno6xx) {
-        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=2048,presentMode=fifo,resourceType=buffer,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
+        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=4096,presentMode=mailbox,resourceType=buffer,bcnEmulation=auto,bcnEmulationCache=1,quality=low"
     } else {
         "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,resourceType=buffer,bcnEmulation=auto,quality=high"
     }
     val dxwrapperConfig = if (gpu.isAdreno6xx) {
-        "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=2048,async=1,asyncCache=1,constantBufferRangeCheck=1"
+        "version=$DXVK_VERSION-1,framerate=0,maxDeviceMemory=0,async=1,asyncCache=1"
     } else {
         "version=$DXVK_VERSION-1"
     }
