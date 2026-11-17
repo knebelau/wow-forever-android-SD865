@@ -1,5 +1,6 @@
 package app.gamenative.ui.screen.wow
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.Environment
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -107,6 +109,7 @@ fun WoWForeverScreen(
     var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context) != null) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
+    var performanceProfile by remember { mutableStateOf(PerformanceProfile.current(context)) }
     var showLoginDialog by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -220,7 +223,7 @@ fun WoWForeverScreen(
             try {
                 val screenSize = fitScreenSizeToWindow(context, resolution.size)
                 val containerId = withContext(Dispatchers.IO) {
-                    prepareLaunch(context, File(gamePath), gpu, screenSize) { msg ->
+                    prepareLaunch(context, File(gamePath), gpu, performanceProfile, screenSize) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
@@ -512,6 +515,12 @@ fun WoWForeverScreen(
                         OptionMenu("Resolution: ${resolution.label}", Icons.Default.AspectRatio, RenderResolution.entries, resolution, { it.label }, !isLaunching) {
                             RenderResolution.save(context, it)
                             resolution = it
+                        }
+                    }
+                    Row {
+                        OptionMenu("Profile: ${performanceProfile.label}", Icons.Default.Speed, PerformanceProfile.entries, performanceProfile, { it.menuLabel }, !isLaunching) {
+                            PerformanceProfile.save(context, it)
+                            performanceProfile = it
                         }
                     }
 
@@ -989,6 +998,29 @@ enum class RenderResolution(val size: String, val label: String) {
     }
 }
 
+/**
+ * Launcher-selectable trade-off between the proven-stable Turnip flags and a faster set.
+ *
+ * STABLE keeps the flags that fixed the Adreno 650 3D-world hangs: `flushall` (cache flush after every draw) and
+ * `noubwc` (no bandwidth compression), both expensive. FAST drops those two, keeping `sysmem` (WoW's G-buffer
+ * overflows the 1 MB GMEM), and turns on Wine esync to cut wineserver round trips. Switch back if FAST hangs.
+ */
+enum class PerformanceProfile(val label: String, val menuLabel: String, val tuDebug: String, val esync: Boolean) {
+    STABLE("Stable", "Stable (recommended)", "noconform,sysmem,noubwc,flushall,unaligned_store", esync = false),
+    FAST("Fast", "Fast (experimental)", "noconform,sysmem,unaligned_store", esync = true);
+
+    companion object {
+        private const val KEY_PROFILE = "performance_profile"
+
+        fun current(context: Context): PerformanceProfile =
+            prefs(context).getString(KEY_PROFILE, null)?.let { saved -> entries.firstOrNull { it.name == saved } } ?: STABLE
+
+        fun save(context: Context, profile: PerformanceProfile) {
+            prefs(context).edit().putString(KEY_PROFILE, profile.name).apply()
+        }
+    }
+}
+
 object GamePath {
     private const val KEY_GAME_PATH = "game_path"
 
@@ -1182,7 +1214,6 @@ private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 private data class GpuProfile(
     val driver: String,
-    val tuDebug: String,
     val screenSize: String,
     val label: String,
     val edition: String,
@@ -1191,7 +1222,6 @@ private data class GpuProfile(
     companion object {
         fun detect(@Suppress("UNUSED_PARAMETER") context: Context) = GpuProfile(
             driver = ADRENO_650_DRIVER,
-            tuDebug = "noconform,sysmem,noubwc,flushall,unaligned_store",
             screenSize = "1280x720",
             label = "Adreno 650",
             edition = "Snapdragon 865 / Adreno 650",
@@ -1223,7 +1253,7 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
     return "${(width / 2).roundToInt() * 2}x${(height / 2).roundToInt() * 2}"
 }
 
-private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
+private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, profile: PerformanceProfile, screenSize: String, onStatus: (String) -> Unit): String {
     installBundledComponents(context, gameRoot, onStatus)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
@@ -1244,9 +1274,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         }
     }
 
-    onStatus("Configuring ${gpu.label} container...")
+    onStatus("Configuring ${gpu.label} container (${profile.label} profile)...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context))
+    val config = containerConfig(context, gameRoot, gpu, profile, screenSize, WowMachineIdentity.load(context))
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1264,9 +1294,17 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
     return CONTAINER_ID
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
+private fun containerConfig(
+    context: Context,
+    gameRoot: File,
+    gpu: GpuProfile,
+    profile: PerformanceProfile,
+    screenSize: String,
+    identity: WowMachineIdentity,
+): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val shaderCacheSize = if (gpu.isAdreno6xx) "128MB" else "512MB"
+    // Big enough to keep WoW's compiled pipelines across zones instead of evicting and recompiling them (stutter).
+    val shaderCacheSize = "512MB"
     val adreno6xxEnv = if (gpu.isAdreno6xx) {
         " DXVK_ASYNC=1 DXVK_GPLASYNCCACHE=1 DXVK_STATE_CACHE=1" +
             " BOX64_DYNAREC_SAFEFLAGS=2 BOX64_DYNAREC_STRONGMEM=1 BOX64_DYNAREC_BIGBLOCK=1" +
@@ -1275,9 +1313,11 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
     } else {
         ""
     }
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
+    val esync = if (profile.esync) "1" else "0"
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=$shaderCacheSize mesa_glthread=true WINEESYNC=$esync MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${profile.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$adreno6xxEnv"
+    val maxDeviceMemory = deviceMemoryBudgetMb(context)
     val graphicsDriverConfig = if (gpu.isAdreno6xx) {
-        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=4096,presentMode=mailbox,resourceType=auto,bcnEmulation=none,bcnEmulationCache=0,quality=low"
+        "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,maxDeviceMemory=$maxDeviceMemory,presentMode=mailbox,resourceType=auto,bcnEmulation=none,bcnEmulationCache=0,quality=low"
     } else {
         "version=${gpu.driver},adrenotoolsTurnip=1,gpuName=Device,resourceType=buffer,bcnEmulation=auto,quality=high"
     }
@@ -1313,6 +1353,17 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("wow64Mode", true)
         put("wincomponents", "direct3d=0,directsound=0,directinput8=0,directinput=0,directmusic=0,directshow=0,directplay=0,vcrun2010=0,wmdecoder=0,opengl=0")
     }
+}
+
+/**
+ * The VRAM budget the game is told about. GPU memory is shared with the system on Adreno, so 6 GB devices get a
+ * smaller budget: WoW otherwise streams more textures than fit next to Android, causing low-memory-killer stutter.
+ */
+private fun deviceMemoryBudgetMb(context: Context): Int {
+    val info = ActivityManager.MemoryInfo()
+    context.getSystemService(ActivityManager::class.java)?.getMemoryInfo(info)
+    val totalGb = info.totalMem / (1024.0 * 1024.0 * 1024.0)
+    return if (totalGb > 0 && totalGb < 7.0) 3072 else 4096
 }
 
 private val CONFIG_DEFAULTS = linkedMapOf(
@@ -1387,6 +1438,22 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         "showScreenNarrationDialog" to "\"0\"",
         "accessibilityScreenNarrationEnabled" to "\"0\"",
         "vsync" to "\"0\"",
+        // 30 FPS cap: even frame pacing and less thermal throttling than an uncapped, fluctuating rate. The game keeps
+        // running in the background (suspendPolicy NEVER), so cap it hard there to save battery and heat.
+        "maxFPS" to "\"30\"",
+        "maxFPSBk" to "\"8\"",
+        "useMaxFPS" to "\"1\"",
+        "useMaxFPSBk" to "\"1\"",
+        "graphicsSSAO" to "\"0\"",
+        "raidGraphicsSSAO" to "\"0\"",
+        "graphicsDepthEffects" to "\"0\"",
+        "raidGraphicsDepthEffects" to "\"0\"",
+        "graphicsOutlineMode" to "\"0\"",
+        "raidGraphicsOutlineMode" to "\"0\"",
+        "MSAAQuality" to "\"0\"",
+        "physicsLevel" to "\"0\"",
+        "weatherDensity" to "\"0\"",
+        "ffxGlow" to "\"0\"",
         "graphicsQuality" to "\"0\"",
         "RAIDgraphicsQuality" to "\"0\"",
         "RenderScale" to "\"0.55\"",

@@ -81,6 +81,7 @@ Once your game files and Battle.net credentials are configured, the app automati
 - The app creates a basic `WTF/Config.wtf` on first run and always sets `gxApi "D3D11"` along with safe view distance (`farclip "1200"`) and shadow (`shadowMode "0"`) defaults for the Adreno 650.
 - **Region:** tap **Region** on the setup screen to choose Americas, Europe, Korea or Taiwan. The game logs straight into that region without showing its region picker. New installs default to a guess based on the device's country. The game is also installed and updated to the build that region's realms run, which can differ between regions right after a patch.
 - **Resolution:** tap **Resolution** on the setup screen to choose 720p, 900p or 1080p. Snapdragon 865 / Adreno 650 devices default to **720p**, which provides the best balance of framerate and memory usage. The game's resolution is set from this on every launch and reshaped to fit non-16:9 screens.
+- **Performance profile:** tap **Profile** on the setup screen. **Stable** (default) uses the proven Turnip flags (`flushall`, `noubwc`). **Fast** (experimental) drops those two expensive flags and enables Wine esync for noticeably higher GPU/CPU throughput; switch back to Stable if the game hangs or crashes. Both profiles cap the game at **30 FPS** (8 FPS in the background) for even frame pacing and less thermal throttling.
 - **Add-ons:** download an add-on's `.zip` on your device, then tap **Add-on** on the setup screen and pick it. It's installed into `_forever_/Interface/AddOns`, replacing any older copy. You can also copy add-on folders there yourself.
 - **Custom Turnip Driver Override (Optional):** you can test any custom Adreno 650 Turnip driver without rebuilding the APK by placing `libvulkan_freedreno.so` or `turnip-sd865.zip` (`.adpkg`) into your WoW install folder or the Android `Download/` folder.
 
@@ -116,7 +117,7 @@ Compared to the upstream Snapdragon 8 Gen 2 / 8 Elite project, this edition incl
 - **Native Hardware BCn Textures (`bcnEmulation=none`, `resourceType=auto`):** Disables the wrapper's BCn-to-ASTC compute transcoding and buffer-resource wrapping, which otherwise caused `kgsl-3d0` GPU ringbuffer hangs (`status 00E795E5`) when entering the 3D world on Adreno 650.
 - **1 MB GMEM & LRZ Bypass (`TU_DEBUG=noconform,sysmem,nolrz,nolrzfc,nocb,unaligned_store`):** Prevents 3D world load crashes (`VK_ERROR_DEVICE_LOST`) caused by WoW's deferred G-buffer MRT pass overflowing the Adreno 650's 1 MB GMEM tile buffer or hanging in LRZ fast-clears.
 - **Native GPU Detection Fix:** Fixes a bug where an empty `gpuName` in `graphicsDriverConfig` matched the last entry in `gpu_cards.json` (`Intel(R) UHD Graphics 630`), ensuring WoW detects `Turnip Adreno (TM) 650` with 4 GB VRAM budget and full UBWC bandwidth compression.
-- **Tuned DXVK, Shader Cache & World CVars:** Configures asynchronous pipeline compilation (`DXVK_ASYNC=1`, `DXVK_GPLASYNCCACHE=1`), a 128 MB Mesa shader cache, `d3d11.constantBufferRangeCheck = True`, and safe world CVars (`farclip "1200"`, `shadowMode "0"`).
+- **Tuned DXVK, Shader Cache & World CVars:** Configures asynchronous pipeline compilation (`DXVK_ASYNC=1`, `DXVK_GPLASYNCCACHE=1`), a 512 MB Mesa shader cache, `d3d11.constantBufferRangeCheck = True`, and safe world CVars (`farclip "1200"`, `shadowMode "0"`).
 
 ---
 
